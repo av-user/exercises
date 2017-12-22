@@ -1,0 +1,531 @@
+	AREA twi_util, CODE, READONLY
+
+twi_set_uninitialized PROC
+	;R0: twi control block address
+	LDR		R1, [R0, #TWICB_STATE_OFFSET]
+	MOVS	R2, #TWICB_STATE_INITIALIZED_MASK
+	MVNS	R2, R2
+	ANDS	R1, R2
+	STR		R1, [R0, #TWICB_STATE_OFFSET]
+	BX		LR
+	ENDP
+
+twi_set_initialized PROC
+	;R0: twi control block address
+	LDR		R1, [R0, #TWICB_STATE_OFFSET]
+	MOVS	R2, #TWICB_STATE_INITIALIZED_MASK
+	ORRS	R1, R2
+	STR		R1, [R0, #TWICB_STATE_OFFSET]
+	BX		LR
+	ENDP
+
+twi_is_initialized PROC
+	EXPORT	twi_is_initialized
+	;R0: twi control block address
+	LDR		R0, [R0, #TWICB_STATE_OFFSET]
+	MOVS	R1, #TWICB_STATE_INITIALIZED_MASK
+	ANDS	R0, R1
+	BX		LR
+	ENDP
+
+	ROUT
+twi_init	PROC
+	EXPORT	twi_init
+	;R0: twi control block address
+	PUSH	{LR,R4}
+	MOV		R4, R0
+	BL		twi_set_uninitialized
+	LDRB	R0, [R4, #TWICB_SDA_PIN_OFFSET]
+	BL		gpio_config_input
+	LDRB	R0, [R4, #TWICB_SDA_PIN_OFFSET]
+	LDR		R1, =GPIO_DRIVE_STRENGTH_S0D1
+	BL		gpio_config_strength
+	MOV		R0, R4
+	LDRB	R1, [R4, #TWICB_SDA_PIN_OFFSET]
+	BL		twi_SDA_pin_select
+	LDRB	R0, [R4, #TWICB_SCL_PIN_OFFSET]
+	BL		gpio_config_input
+	LDRB	R0, [R4, #TWICB_SCL_PIN_OFFSET]
+	LDR		R1, =GPIO_DRIVE_STRENGTH_S0D1
+	BL		gpio_config_strength
+	MOV		R0, R4
+	LDRB	R1, [R4, #TWICB_SCL_PIN_OFFSET]
+	BL		twi_SCL_pin_select
+	MOV		R0, R4
+	BL		twi_device_address_set
+	MOV		R0, R4
+	BL		twi_frequency_set
+	CMP		R0, #0x00
+	BEQ		%0
+	MOV		R0, R4
+	BL		twi_SHORTS_set
+	MOV		R0, R4
+	BL		twi_enable
+	MOV		R0, R4
+	BL		twi_set_initialized
+	MOVS	R0, #0x01
+0	POP		{PC,R4}
+    ENDP
+
+twi_device_address_set	PROC
+	;R0: twi control block address
+	LDRB	R2, [R0, #TWICB_DEV_ADDR_OFFSET]
+	LDR		R1, =TWI_ADDRESS_OFFSET
+	LDR		R0, [R0, #TWICB_BASE_OFFSET]
+	STR		R2, [R0, R1]
+	BX		LR
+	ENDP
+
+twi_SDA_pin_select	PROC
+	;R0: twi control block address
+	LDRB	R2, [R0, #TWICB_SDA_PIN_OFFSET]
+	LDR		R1, =TWI_PSELSDA_OFFSET
+	LDR		R0, [R0, #TWICB_BASE_OFFSET]
+	STR		R2, [R0, R1]
+	BX		LR
+	ENDP
+
+twi_SCL_pin_select	PROC
+	;R0: twi control block address
+	LDRB	R2, [R0, #TWICB_SCL_PIN_OFFSET]
+	LDR		R1, =TWI_PSELSCL_OFFSET
+	LDR		R0, [R0, #TWICB_BASE_OFFSET]
+	STR		R2, [R0, R1]
+	BX		LR
+	ENDP
+
+twi_enable	PROC
+	;R0: twi control block address
+	LDR		R1, =TWI_ENABLE_OFFSET
+	LDR		R0, [R0, #TWICB_BASE_OFFSET]
+	MOVS	R2, #0x05
+	STR		R2, [R0, R1]
+	BX		LR
+	ENDP
+
+	ROUT
+twi_frequency_set	PROC
+	;R0: twi control block address
+	;returns 0 in R0 if argument invalid, 1 otherwise
+	LDR		R2, [R4, #TWICB_FREQUENCY_OFFSET]
+	LDR		R3, =FREQ_K100
+	CMP		R2, R3
+	BEQ		%0
+	LDR		R3, =FREQ_K250
+	CMP		R2, R3
+	BEQ		%0
+	LDR		R3, =FREQ_K250
+	CMP		R2, R3
+	BNE		%1	;invalid value
+0	NOP		;valid freq value
+	LDR		R0, [R4, #TWICB_BASE_OFFSET]
+	LDR		R1, =TWI_FREQUENCY_OFFSET
+	STR		R2, [R0,R1]
+	MOVS	R0, #0x01	;success
+	B		%2
+1	NOP		;invalid freq value
+	EORS	R0,R0,R0
+2	BX		LR
+	ENDP
+
+twi_SHORTS_set PROC
+	;R0: twi control block address
+	LDR		R2, =TWI_SHORTS_OFFSET
+	LDRB	R1, [R0, #TWICB_SHORTS_OFFSET]
+	LDR		R0, [R0, #TWICB_BASE_OFFSET]
+	STR		R1, [R0, R2]
+	BX		LR
+	ENDP
+
+twi_short_disable PROC
+	EXPORT	twi_short_disable
+	;R0: twi control block address
+	LDR		R2, =TWI_SHORTS_OFFSET
+	LDR		R0, [R0, #TWICB_BASE_OFFSET]
+	MOVS	R1, #TWI_SHORTS_BB_DISABLED
+	STR		R1, [R0, R2]
+	BX		LR
+	ENDP
+
+twi_short_BB_SUSPEND PROC
+	EXPORT	twi_short_BB_SUSPEND
+	;R0: twi control block address
+	LDR		R2, =TWI_SHORTS_OFFSET
+	LDR		R0, [R0, #TWICB_BASE_OFFSET]
+	MOVS	R1, #TWI_SHORTS_BB_SUSPEND
+	STR		R1, [R0, R2]
+	BX		LR
+	ENDP
+
+twi_short_BB_SUSPEND_STOP PROC
+	EXPORT	twi_short_BB_SUSPEND_STOP
+	;R0: twi control block address
+	LDR		R2, =TWI_SHORTS_OFFSET
+	LDR		R0, [R0, #TWICB_BASE_OFFSET]
+	MOVS	R1, #TWI_SHORTS_BB_SUSPEND_STOP
+	STR		R1, [R0, R2]
+	BX		LR
+	ENDP
+
+twi_short_BB_STOP PROC
+	EXPORT	twi_short_BB_STOP
+	;R0: twi control block address
+	LDR		R2, =TWI_SHORTS_OFFSET
+	LDR		R0, [R0, #TWICB_BASE_OFFSET]
+	MOVS	R1, #TWI_SHORTS_BB_STOP
+	STR		R1, [R0, R2]
+	BX		LR
+	ENDP
+
+twi_RESUME	PROC
+	EXPORT	twi_RESUME
+	;R0: twi control block address
+	LDR		R2, =TWI_RESUME_OFFSET
+	LDR		R0, [R0, #TWICB_BASE_OFFSET]
+	MOVS	R1, #0x01
+	STR		R1, [R0, R2]
+	BX		LR
+	ENDP
+	
+twi_txd_write	PROC
+	EXPORT	twi_txd_write
+	;R0: twi control block address
+	;R1: byte to be written
+	LDR		R2, =TWI_TXD_OFFSET
+	LDR		R0, [R0, #TWICB_BASE_OFFSET]
+	STR		R1, [R0, R2]
+	BX		LR
+	ENDP
+
+twi_rxd_read	PROC
+	EXPORT	twi_rxd_read
+	;R0: twi control block address
+	;byte read returned in R0
+	LDR		R2, =TWI_RXD_OFFSET
+	LDR		R0, [R0, #TWICB_BASE_OFFSET]
+	LDR		R0, [R0, R2]
+	BX		LR
+	ENDP
+
+twi_transmission_start	PROC
+	EXPORT	twi_transmission_start
+	;R0: twi control block address
+	LDR		R2, =TWI_STARTTX_OFFSET
+	LDR		R0, [R0, #TWICB_BASE_OFFSET]
+	MOVS	R1, #0x01
+	STR		R1, [R0, R2]
+	BX		LR
+	ENDP
+
+twi_receiving_start	PROC
+	EXPORT	twi_receiving_start
+	;R0: twi control block address
+	LDR		R2, =TWI_STARTRX_OFFSET
+	LDR		R0, [R0, #TWICB_BASE_OFFSET]
+	MOVS	R1, #0x01
+	STR		R1, [R0, R2]
+	BX		LR
+	ENDP
+
+twi_transaction_stop	PROC
+	EXPORT	twi_transaction_stop
+	;R0: twi control block address
+	LDR		R2, =TWI_STOP_OFFSET
+	LDR		R0, [R0, #TWICB_BASE_OFFSET]
+	MOVS	R1, #0x01
+	STR		R1, [R0, R2]
+	BX		LR
+	ENDP
+
+twi_stopped_wait_clear	PROC
+	EXPORT	twi_stopped_wait_clear
+	;R0: twi control block address
+	PUSH	{LR}
+	LDR		R1, =TWI_STOPPED_OFFSET
+	BL		twi_event_wait_clear
+	POP		{PC}
+	ENDP
+
+twi_RXD_ready_clear	PROC
+	EXPORT	twi_RXD_ready_clear
+	;R0: twi control block address
+	LDR		R2, =TWI_RXDREADY_OFFSET
+	LDR		R0, [R0, #TWICB_BASE_OFFSET]
+	MOVS	R1, #0x00
+	STR		R1, [R0, R2]
+	BX		LR
+	ENDP
+
+twi_RXD_ready_wait_clear	PROC
+	EXPORT	twi_RXD_ready_wait_clear
+	;R0: twi control block address
+	PUSH	{LR}
+	LDR		R1, =TWI_RXDREADY_OFFSET
+	BL		twi_event_wait_clear
+	POP		{PC}
+	ENDP
+
+twi_RTD_sent_clear	PROC
+	EXPORT	twi_RTD_sent_clear
+	;R0: twi control block address
+	LDR		R2, =TWI_TXDSENT_OFFSET
+	LDR		R0, [R0, #TWICB_BASE_OFFSET]
+	MOVS	R1, #0x00
+	STR		R1, [R0, R2]
+	BX		LR
+	ENDP
+
+twi_RTD_sent_wait_clear	PROC
+	EXPORT	twi_RTD_sent_wait_clear
+	;R0: twi control block address
+	PUSH	{LR}
+	LDR		R1, =TWI_TXDSENT_OFFSET
+	BL		twi_event_wait_clear
+	POP		{PC}
+	ENDP
+
+twi_BB_event_wait_clear	PROC
+	EXPORT	twi_BB_event_wait_clear
+	;R0: twi control block address
+	PUSH	{LR}
+	LDR		R1, =TWI_BB_OFFSET
+	BL		twi_event_wait_clear
+	POP		{PC}
+	ENDP
+
+	ROUT
+twi_event_wait_clear	PROC
+	;R0: twi control block address
+	;R1: event offset
+	PUSH	{LR}
+	LDR		R0, [R0, #TWICB_BASE_OFFSET]
+	EORS	R3,R3,R3	;loop counter
+0	CMP		R3, #0xFF
+	BEQ		%1	;timeout
+	MOV		R2, R0
+	LDR		R0, =500
+	BL		nrf_delay_mcs
+	MOV		R0, R2
+	MOV		R2, R1
+	LDR		R1, [R0, R2]
+	ADDS	R3, #0x01
+	CMP		R1, #0x00
+	BEQ		%0
+	MOVS	R1, #0x00
+	STR		R1, [R0, R2]
+	MOVS	R0, #0x01	;return success
+	B		%2
+1	EORS	R0,R0,R0	;return error
+2	POP		{PC}
+	ENDP
+
+twi_STOPPED_event_wait_clear	PROC
+	EXPORT	twi_STOPPED_event_wait_clear
+	;R0: twi control block address
+	PUSH	{LR}
+	LDR		R1, =TWI_STOPPED_OFFSET
+	BL		twi_event_wait_clear
+	POP		{PC}
+	ENDP
+
+twi_SUSPENDED_event_clear	PROC
+	EXPORT	twi_SUSPENDED_event_clear
+	;R0: twi control block address
+	LDR		R2, =TWI_SUSPENDED_OFFSET
+	LDR		R0, [R0, #TWICB_BASE_OFFSET]
+	MOVS	R1, #0x00
+	STR		R1, [R0, R2]
+	BX		LR
+	ENDP
+
+twi_STOPPED_event_clear	PROC
+	EXPORT	twi_STOPPED_event_clear
+	;R0: twi control block address
+	LDR		R2, =TWI_STOPPED_OFFSET
+	LDR		R0, [R0, #TWICB_BASE_OFFSET]
+	MOVS	R1, #0x00
+	STR		R1, [R0, R2]
+	BX		LR
+	ENDP
+
+twi_BB_event_clear	PROC
+	EXPORT	twi_BB_event_clear
+	;R0: twi control block address
+	LDR		R2, =TWI_BB_OFFSET
+	LDR		R0, [R0, #TWICB_BASE_OFFSET]
+	MOVS	R1, #0x00
+	STR		R1, [R0, R2]
+	BX		LR
+	ENDP
+
+twi_ERROR_event_clear	PROC
+	EXPORT	twi_ERROR_event_clear
+	;R0: twi control block address
+	LDR		R2, =TWI_ERROR_OFFSET
+	LDR		R0, [R0, #TWICB_BASE_OFFSET]
+	MOVS	R1, #0x00
+	STR		R1, [R0, R2]
+	BX		LR
+	ENDP
+
+twi_ERROR_event_get	PROC
+	EXPORT	twi_ERROR_event_get
+	;R0: twi control block address
+	LDR		R1, =TWI_ERROR_OFFSET
+	LDR		R0, [R0, #TWICB_BASE_OFFSET]
+	LDR		R0, [R0, R1]
+	BX		LR
+	ENDP
+
+twi_ERRORSRC_get	PROC
+	EXPORT	twi_ERRORSRC_get
+	;R0: twi control block address
+	LDR		R1, =TWI_ERRORSRC_OFFSET
+	LDR		R0, [R0, #TWICB_BASE_OFFSET]
+	LDR		R0, [R0, R1]
+	BX		LR
+	ENDP
+
+	ROUT
+twi_read_byte	PROC
+	EXPORT	twi_read_byte
+	;R0: twi control block address
+	;R1: 1 if receiving start required, 0 otherwise
+	;returns 1 in R0 and the value read in R1 on success, on error 0 in R0
+	PUSH	{LR,R4,R5}
+	MOV		R4, R0
+	MOV		R5, R1
+	BL		twi_RESUME
+	CMP		R5, #0x00
+	BEQ		%0
+	MOV		R0, R4
+	BL		twi_receiving_start
+0	MOV		R0, R4
+	BL		twi_RXD_ready_wait_clear
+	CMP		R0, #0x00
+	BEQ		%1	;error
+	MOV		R0, R4
+	BL		twi_BB_event_wait_clear
+	MOV		R0, R4
+	BL		twi_SUSPENDED_event_clear
+	MOV		R0, R4
+	BL		twi_rxd_read
+	MOV		R1, R0
+	MOVS	R0, #0x01
+	B 		%2
+1	EORS	R0,R0,R0
+2	POP		{PC,R4,R5}
+	ENDP
+
+	ROUT
+twi_write_byte	PROC
+	EXPORT	twi_write_byte
+	;R0: twi control block address
+	;R1: byte value
+	;R2: 1 if transmission start required, 0 otherwise
+	;returns 1 in R0 on succsess, 0 on error
+	PUSH	{LR,R4,R5}
+	MOV		R4, R0
+	MOV		R5, R1
+	CMP		R2, #0x00
+	BEQ		%0
+	MOV		R0, R4
+	BL		twi_transmission_start
+0	NOP
+	MOV		R0, R4
+	MOV		R1, R5
+	BL		twi_txd_write
+	MOV		R0, R4
+	BL		twi_RTD_sent_wait_clear
+	CMP		R0, #0x00
+	BEQ		%1	;error
+	MOV		R0, R4
+	BL		twi_BB_event_wait_clear
+	MOVS	R0, #0x01
+	B 		%2
+1	EORS	R0,R0,R0
+2	POP		{PC,R4,R5}
+	ENDP
+
+;******************
+
+TWI0_BASE_ADDRESS		EQU		0x40003000
+TWI1_BASE_ADDRESS		EQU		0x40004000
+
+;Tasks
+TWI_STARTRX_OFFSET		EQU		0x000 ;Start TWI receive sequence
+TWI_STARTTX_OFFSET		EQU		0x008 ;Start TWI transmit sequence
+TWI_STOP_OFFSET			EQU		0x014 ;Stop TWI transaction
+TWI_SUSPEND_OFFSET		EQU		0x01C ;Suspend TWI transaction
+TWI_RESUME_OFFSET		EQU		0x020 ;Resume TWI transaction
+;Events
+TWI_STOPPED_OFFSET		EQU		0x104 ;TWI stopped
+TWI_RXDREADY_OFFSET		EQU		0x108 ;TWI RXD byte received
+TWI_TXDSENT_OFFSET		EQU		0x11C ;TWI TXD byte sent
+TWI_ERROR_OFFSET		EQU		0x124 ;TWI error
+TWI_BB_OFFSET			EQU		0x138 ;TWI byte boundary, generated before each byte that is sent or received
+TWI_SUSPENDED_OFFSET	EQU		0x148 ;TWI suspended
+;Registers
+TWI_SHORTS_OFFSET		EQU		0x200 ;Shortcut register
+TWI_INTEN_OFFSET		EQU		0x300 ;Enable or disable interrupt
+TWI_INTENSET_OFFSET		EQU		0x304 ;Enable interrupt
+TWI_INTENCLR_OFFSET		EQU		0x308 ;Disable interrupt
+TWI_ERRORSRC_OFFSET		EQU		0x4C4 ;Error source
+TWI_ENABLE_OFFSET		EQU		0x500 ;Enable TWI
+TWI_PSELSCL_OFFSET		EQU		0x508 ;Pin select for SCL
+TWI_PSELSDA_OFFSET		EQU		0x50C ;Pin select for SDA
+TWI_RXD_OFFSET			EQU		0x518 ;RXD register
+TWI_TXD_OFFSET			EQU		0x51C ;TXD register
+TWI_FREQUENCY_OFFSET	EQU		0x524 ;TWI frequency
+TWI_ADDRESS_OFFSET		EQU		0x588 ;Address used in the TWI transfer
+
+FREQ_K100 				EQU		0x01980000 ;100 kbps
+FREQ_K250 				EQU		0x04000000 ;250 kbps
+FREQ_K400 				EQU		0x06680000 ;400 kbps
+
+	EXTERN	nrf_delay_mcs
+
+	EXTERN	gpio_config_output
+	EXTERN	gpio_config_pullup
+	EXTERN	gpio_config_input
+	EXTERN	gpio_set_high
+	EXTERN	gpio_config_strength
+
+	EXTERN	GPIO_DRIVE_STRENGTH_S0D1
+
+;twi control block structure
+	EXPORT	TWICB_BASE_OFFSET		[WEAK]
+	EXPORT	TWICB_FREQUENCY_OFFSET	[WEAK]
+	EXPORT	TWICB_SDA_PIN_OFFSET	[WEAK]
+	EXPORT	TWICB_SCL_PIN_OFFSET	[WEAK]
+	EXPORT	TWICB_DEV_ADDR_OFFSET	[WEAK]
+
+TWICB_STATE_INITIALIZED_MASK		EQU	0x01
+
+TWICB_BASE_OFFSET		EQU		0x00
+TWICB_STATE_OFFSET		EQU		0x04
+TWICB_FREQUENCY_OFFSET	EQU		0x08
+TWICB_SDA_PIN_OFFSET	EQU		0x0C
+TWICB_SCL_PIN_OFFSET	EQU		0x0D
+TWICB_DEV_ADDR_OFFSET	EQU		0x0E
+TWICB_SHORTS_OFFSET		EQU		0x0F
+
+	EXPORT	TWI_SHORTS_BB_DISABLED
+	EXPORT	TWI_SHORTS_BB_SUSPEND
+	EXPORT	TWI_SHORTS_BB_STOP
+	EXPORT	TWI_SHORTS_BB_SUSPEND_STOP
+
+TWI_SHORTS_BB_DISABLED		EQU		0x00
+TWI_SHORTS_BB_SUSPEND		EQU		0x01
+TWI_SHORTS_BB_STOP			EQU		0x02
+TWI_SHORTS_BB_SUSPEND_STOP	EQU		0x03
+
+	EXPORT	TWI0_BASE_ADDRESS			[WEAK]
+	EXPORT	TWI1_BASE_ADDRESS			[WEAK]
+
+;master data rate values
+	EXPORT	FREQ_K100			[WEAK]
+	EXPORT	FREQ_K250			[WEAK]
+	EXPORT	FREQ_K400			[WEAK]
+
+	END
